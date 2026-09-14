@@ -11,6 +11,7 @@ public record KpiCardConfigResponse(
 		String optionalLabel,
 		String accentColor,
 		int order,
-		boolean required
+		boolean required,
+		String layer
 ) {
 }

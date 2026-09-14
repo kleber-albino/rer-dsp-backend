@@ -48,21 +48,9 @@ public class AreaOfInterest {
 	)
 	private TerritoryLevel3 territoryLevel3;
 
-	// Area migrated from source (media unit = installationConfig.areaOfInterest).
+	// Area calculated by the KPI migration job (unit = installationConfig.areaOfInterest).
 	@Column(name = "area")
 	private BigDecimal area;
-
-	@Column(name = "theme_1")
-	private BigDecimal theme1;
-
-	@Column(name = "theme_2")
-	private BigDecimal theme2;
-
-	@Column(name = "theme_3")
-	private BigDecimal theme3;
-
-	@Column(name = "theme_4")
-	private BigDecimal theme4;
 
 	@Column(name = "boundary_box", columnDefinition = "geometry")
 	private Polygon boundaryBox;

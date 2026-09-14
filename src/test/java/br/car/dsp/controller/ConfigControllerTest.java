@@ -69,7 +69,8 @@ class ConfigControllerTest {
 								"ha",
 								"#CED6E5",
 								1,
-								true
+								true,
+								null
 						))
 				),
 				new AreaOfInterestMeasuresConfigResponse("ha", "ha"),

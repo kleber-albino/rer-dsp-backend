@@ -9,17 +9,18 @@ import br.car.dsp.dto.HomeDetailSearchConfigResponse;
 import br.car.dsp.dto.HomeKpisConfigResponse;
 import br.car.dsp.dto.InstallationConfigResponse;
 import br.car.dsp.dto.KpiCardConfigResponse;
+import br.car.dsp.dto.KpiTotalsProjection;
 import br.car.dsp.dto.HomeScreenConfigResponse;
 import br.car.dsp.dto.ScreensConfigResponse;
 import br.car.dsp.dto.TerritoryLevelRefResponse;
 import br.car.dsp.dto.TerritoryLevelsResponse;
-import br.car.dsp.dto.ThemeTotalsAggregate;
 import br.car.dsp.dto.TotalizerFilterRequest;
 import br.car.dsp.dto.TotalizerResponse;
 import br.car.dsp.model.AreaOfInterest;
 import br.car.dsp.model.TerritoryLevel2;
 import br.car.dsp.model.TerritoryLevel3;
 import br.car.dsp.repository.AreaOfInterestRepository;
+import br.car.dsp.repository.KpiMeasureRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -68,6 +69,7 @@ public class TotalizerService {
 	);
 
 	private final AreaOfInterestRepository areaOfInterestRepository;
+	private final KpiMeasureRepository kpiMeasureRepository;
 	private final InstallationConfigService installationConfigService;
 	private final AreaOfInterestAttributeReader areaOfInterestAttributeReader;
 
@@ -79,14 +81,16 @@ public class TotalizerService {
 		InstallationConfigResponse config = installationConfigService.getInstallationConfig();
 		List<KpiCardConfigResponse> cards = resolveCards(config);
 		AreaOfInterestAggregate aggregate = resolveAggregate(level2Ids, level3Ids);
-		ThemeTotalsAggregate themes = resolveThemeTotals(level2Ids, level3Ids);
+		Map<String, BigDecimal> kpiTotals = needsKpiTotals(cards)
+				? resolveKpiTotals(level2Ids, level3Ids)
+				: Map.of();
 
 		List<TotalizerResponse> totalizers = new ArrayList<>(cards.size());
 		for (KpiCardConfigResponse card : cards) {
 			if (card == null || card.code() == null || card.code().isBlank()) {
 				continue;
 			}
-			totalizers.add(toTotalizer(card, aggregate, themes));
+			totalizers.add(toTotalizer(card, aggregate, kpiTotals));
 		}
 		return totalizers;
 	}
@@ -240,14 +244,8 @@ public class TotalizerService {
 		return !CANONICAL_AOI_DETAIL_FIELDS.contains(field);
 	}
 
-	private static boolean needsThemeTotals(List<KpiCardConfigResponse> cards) {
-		return cards.stream().anyMatch(card -> {
-			String code = card.code() == null ? "" : card.code().trim();
-			return CODE_THEME_1.equals(code)
-					|| CODE_THEME_2.equals(code)
-					|| CODE_THEME_3.equals(code)
-					|| CODE_THEME_4.equals(code);
-		});
+	private static boolean needsKpiTotals(List<KpiCardConfigResponse> cards) {
+		return cards.stream().anyMatch(card -> card.layer() != null && !card.layer().isBlank());
 	}
 
 	private List<KpiCardConfigResponse> resolveCards(InstallationConfigResponse config) {
@@ -275,25 +273,26 @@ public class TotalizerService {
 				measures.areaUnit(),
 				null,
 				1,
-				true
+				true,
+				null
 		);
 	}
 
 	private TotalizerResponse toTotalizer(
 			KpiCardConfigResponse card,
 			AreaOfInterestAggregate aggregate,
-			ThemeTotalsAggregate themes
+			Map<String, BigDecimal> kpiTotals
 	) {
 		String code = card.code().trim();
 		if (CODE_AREA_OF_INTEREST.equals(code)) {
 			return toAreaOfInterestTotalizer(aggregate, card);
 		}
-		BigDecimal themeSum = themeSumForCode(code, themes);
-		long value = themeSum.setScale(0, RoundingMode.HALF_UP).longValue();
+		BigDecimal themeSum = kpiTotalForCard(card, kpiTotals);
+		double value = themeSum.setScale(2, RoundingMode.HALF_UP).doubleValue();
 		return new TotalizerResponse(
 				card.label(),
 				code,
-				(double) value,
+				value,
 				null,
 				null,
 				card.unitOfMeasurement()
@@ -310,7 +309,7 @@ public class TotalizerService {
 		BigDecimal totalArea = aggregate != null && aggregate.getTotalArea() != null
 				? aggregate.getTotalArea()
 				: BigDecimal.ZERO;
-		long areaSum = totalArea.setScale(0, RoundingMode.HALF_UP).longValue();
+		double areaSum = totalArea.setScale(2, RoundingMode.HALF_UP).doubleValue();
 		return new TotalizerResponse(
 				card.label(),
 				CODE_AREA_OF_INTEREST,
@@ -321,17 +320,11 @@ public class TotalizerService {
 		);
 	}
 
-	private static BigDecimal themeSumForCode(String code, ThemeTotalsAggregate themes) {
-		if (themes == null) {
+	private static BigDecimal kpiTotalForCard(KpiCardConfigResponse card, Map<String, BigDecimal> kpiTotals) {
+		if (card == null || card.layer() == null || card.layer().isBlank() || kpiTotals == null) {
 			return BigDecimal.ZERO;
 		}
-		return switch (code) {
-			case CODE_THEME_1 -> nullToZero(themes.getTheme1());
-			case CODE_THEME_2 -> nullToZero(themes.getTheme2());
-			case CODE_THEME_3 -> nullToZero(themes.getTheme3());
-			case CODE_THEME_4 -> nullToZero(themes.getTheme4());
-			default -> BigDecimal.ZERO;
-		};
+		return nullToZero(kpiTotals.get(card.layer().trim()));
 	}
 
 	private static BigDecimal nullToZero(BigDecimal value) {
@@ -350,16 +343,29 @@ public class TotalizerService {
 		return areaOfInterestRepository.aggregateAll();
 	}
 
-	private ThemeTotalsAggregate resolveThemeTotals(List<String> level2Ids, List<String> level3Ids) {
+	private Map<String, BigDecimal> resolveKpiTotals(List<String> level2Ids, List<String> level3Ids) {
+		List<KpiTotalsProjection> projections;
 		List<String> normalizedLevel3Ids = normalizeIds(level3Ids);
 		if (!normalizedLevel3Ids.isEmpty()) {
-			return areaOfInterestRepository.sumThemesByLevel3Ids(normalizedLevel3Ids);
+			projections = kpiMeasureRepository.sumByKpiNameAndLevel3Ids(normalizedLevel3Ids);
+		} else {
+			List<String> normalizedLevel2Ids = normalizeIds(level2Ids);
+			if (!normalizedLevel2Ids.isEmpty()) {
+				projections = kpiMeasureRepository.sumByKpiNameAndLevel2Ids(normalizedLevel2Ids);
+			} else {
+				projections = kpiMeasureRepository.sumByKpiNameAll();
+			}
 		}
-		List<String> normalizedLevel2Ids = normalizeIds(level2Ids);
-		if (!normalizedLevel2Ids.isEmpty()) {
-			return areaOfInterestRepository.sumThemesByLevel2Ids(normalizedLevel2Ids);
+		Map<String, BigDecimal> totals = new LinkedHashMap<>();
+		if (projections != null) {
+			for (KpiTotalsProjection projection : projections) {
+				if (projection == null || projection.getKpiName() == null) {
+					continue;
+				}
+				totals.put(projection.getKpiName(), nullToZero(projection.getTotal()));
+			}
 		}
-		return areaOfInterestRepository.sumThemesAll();
+		return totals;
 	}
 
 	private static List<String> normalizeIds(List<String> ids) {

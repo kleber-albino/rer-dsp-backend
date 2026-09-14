@@ -39,7 +39,7 @@ class TotalizerControllerTest {
 		filter.setLevel2Ids(List.of("DF"));
 
 		totalizers = List.of(
-				new TotalizerResponse("Imóveis cadastrados", "AREA_OF_INTEREST", 10.0, "ha", 20L, "un.")
+				new TotalizerResponse("Imóveis cadastrados", "AREA_OF_INTEREST", 10.0, "ha", 20.0, "un.")
 		);
 
 		detail = new DetailByIdentifierResponse(

@@ -91,7 +91,7 @@ public final class LocationMockData {
 				"AREA_OF_INTEREST",
 				(double) properties,
 				"ha",
-				areaHa,
+				(double) areaHa,
 				"un."
 		));
 		items.add(new TotalizerResponse(

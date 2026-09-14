@@ -8,7 +8,7 @@ public record TotalizerResponse(
 		String code,
 		Double value,
 		String subItemName,
-		Long subItemValue,
+		Double subItemValue,
 		String unitOfMeasurement
 ) {
 }
