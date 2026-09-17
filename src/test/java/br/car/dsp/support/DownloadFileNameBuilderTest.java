@@ -58,8 +58,8 @@ class DownloadFileNameBuilderTest {
 
 	@Test
 	void toFileSegment_ShouldSlugifyAccentsAndSpaces() {
-		assertEquals("area-de-seguranca-0-300-m", DownloadFileNameBuilder.toFileSegment(
-				"Área de segurança 0–300 m",
+		assertEquals("safety-area-0-300-m", DownloadFileNameBuilder.toFileSegment(
+				"Safety aréa 0–300 m",
 				"theme"
 		));
 	}

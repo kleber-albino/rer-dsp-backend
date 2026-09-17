@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.util.List;
 
 /**
- * API for totalizers and details by identifier.
- * Retains the getDetailsByIdentifier type from the original system (Public Inquiry).
+ * Totalizers and area-of-interest detail by identifier or coordinates.
+ * Path {@code getDeatilsByIdentifier} keeps the historical typo for API compatibility.
  */
 @RequestMapping("/totalizer")
 public interface TotalizerApi {

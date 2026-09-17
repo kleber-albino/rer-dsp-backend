@@ -159,7 +159,7 @@ class TotalizerServiceTest {
 	void getTotalizers_WhenConfigLabelChanges_ShouldUseLabelFromConfig() {
 		when(installationConfigService.getInstallationConfig())
 				.thenReturn(installationConfigWithThemes(
-						"Imóveis cadastrados",
+						"Registered properties",
 						"un.",
 						"ha"
 				));
@@ -169,7 +169,7 @@ class TotalizerServiceTest {
 		List<TotalizerResponse> result = totalizerService.getTotalizers(null);
 
 		TotalizerResponse primary = result.getFirst();
-		assertEquals("Imóveis cadastrados", primary.name());
+		assertEquals("Registered properties", primary.name());
 		assertEquals("un.", primary.unitOfMeasurement());
 		assertEquals("ha", primary.subItemName());
 	}

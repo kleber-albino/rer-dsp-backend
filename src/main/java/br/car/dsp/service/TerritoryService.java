@@ -95,7 +95,7 @@ public class TerritoryService {
 			return fallbackFromLevel2();
 		}
 
-		// Sem params: todos os L1, com fallback L2 → L3.
+		// No params: all L1 rows, with fallback L2 → L3.
 		TerritoryEnvelopeProjection envelope = envelopeLevel1(List.of(), false);
 		if (isPresent(envelope)) {
 			return toResponse(envelope);
