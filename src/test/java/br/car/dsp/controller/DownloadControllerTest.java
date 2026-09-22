@@ -68,11 +68,11 @@ class DownloadControllerTest {
 	@Test
 	void downloadFeaturesBundle_ShouldDelegateToService() {
 		ResponseEntity<byte[]> response = ResponseEntity.ok(new byte[]{80, 75});
-		when(downloadService.downloadFeaturesBundle("DEMO-001")).thenReturn(response);
+		when(downloadService.downloadFeaturesBundle("DEMO-001", "csv")).thenReturn(response);
 
-		ResponseEntity<byte[]> result = downloadController.downloadFeaturesBundle("DEMO-001");
+		ResponseEntity<byte[]> result = downloadController.downloadFeaturesBundle("DEMO-001", "csv");
 
 		assertEquals(response, result);
-		verify(downloadService).downloadFeaturesBundle("DEMO-001");
+		verify(downloadService).downloadFeaturesBundle("DEMO-001", "csv");
 	}
 }

@@ -31,7 +31,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class DownloadService {
 
 	/** Formats the WFS can produce, and therefore the only ones with a fallback. */
-	private static final Set<String> WFS_BACKED_FORMATS = Set.of("csv");
+	private static final Set<String> WFS_BACKED_FORMATS = Set.of("csv", "gpkg");
+
+	private static final String GPKG_FORMAT = "gpkg";
 
 	private final DownloadConfigService downloadConfigService;
 	private final DownloadTerritoryFilterBuilder territoryFilterBuilder;
@@ -74,10 +76,13 @@ public class DownloadService {
 			String cqlFilter = territoryFilterBuilder.buildCqlFilter(theme, level2, level3);
 			long matched = geoServerWfsClient.countFeatures(wfsBaseUrl, theme.typeName(), cqlFilter);
 			boolean available = matched > 0;
+			boolean gpkgPublished = themeDeclares(theme, GPKG_FORMAT)
+					&& preGeneratedGeoFileService.exists(level2, level3, theme.code(), GPKG_FORMAT);
 			List<DownloadFormatStatus> formats = theme.formats().stream()
+					.filter(format -> !isGpkg(format) || gpkgPublished)
 					.map(format -> new DownloadFormatStatus(
 							format,
-							available
+							isGpkg(format) || available
 									? DownloadFormatStatus.AVAILABLE
 									: DownloadFormatStatus.UNAVAILABLE
 					))
@@ -173,9 +178,8 @@ public class DownloadService {
 	}
 
 	/**
-	 * Fallback for what the object storage does not have. Only {@code csv} exists in the WFS:
-	 * any other format is served exclusively from the pre-generated file, so its absence is a
-	 * "not ready yet", not a broken request.
+	 * Fallback for what the object storage does not have. {@code csv} and {@code gpkg} exist in
+	 * the WFS; any other format is served exclusively from the pre-generated file.
 	 */
 	private byte[] downloadFromWfs(DownloadThemeConfig themeConfig, String level2, String level3,
 			String format) {
@@ -188,6 +192,9 @@ public class DownloadService {
 		long matched = geoServerWfsClient.countFeatures(wfsBaseUrl, themeConfig.typeName(), cqlFilter);
 		if (matched <= 0) {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File unavailable for download");
+		}
+		if (isGpkg(format)) {
+			return geoServerWfsClient.downloadGpkg(wfsBaseUrl, themeConfig.typeName(), cqlFilter);
 		}
 		return geoServerWfsClient.downloadCsv(wfsBaseUrl, themeConfig.typeName(), cqlFilter);
 	}
@@ -206,11 +213,12 @@ public class DownloadService {
 				: Optional.of(formats.getFirst());
 	}
 
-	public ResponseEntity<byte[]> downloadFeaturesBundle(String aoiId) {
+	public ResponseEntity<byte[]> downloadFeaturesBundle(String aoiId, String format) {
 		String normalizedAoiId = blankToNull(aoiId);
 		if (normalizedAoiId == null) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Area of interest id is required");
 		}
+		String normalizedFormat = normalizeBundleFormat(format);
 		if (!areaOfInterestRepository.existsById(normalizedAoiId)) {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Area of interest not found");
 		}
@@ -219,7 +227,10 @@ public class DownloadService {
 		Map<String, byte[]> entries = new LinkedHashMap<>();
 
 		for (DownloadThemeConfig theme : downloadConfigService.getEnabledThemes()) {
-			if (!theme.formats().contains("csv")) {
+			List<String> bundleFormats = bundleFormats(theme).stream()
+					.filter(candidate -> isFormat(candidate, normalizedFormat))
+					.toList();
+			if (bundleFormats.isEmpty()) {
 				continue;
 			}
 
@@ -229,9 +240,14 @@ public class DownloadService {
 				continue;
 			}
 
-			byte[] content = geoServerWfsClient.downloadCsv(wfsBaseUrl, theme.typeName(), cqlFilter);
-			String entryName = downloadFileNameBuilder.buildForAoi(normalizedAoiId, theme.name(), "csv");
-			entries.put(entryName, content);
+			for (String entryFormat : bundleFormats) {
+				byte[] content = isGpkg(entryFormat)
+						? geoServerWfsClient.downloadGpkg(wfsBaseUrl, theme.typeName(), cqlFilter)
+						: geoServerWfsClient.downloadCsv(wfsBaseUrl, theme.typeName(), cqlFilter);
+				String entryName = downloadFileNameBuilder.buildForAoi(
+						normalizedAoiId, theme.name(), entryFormat);
+				entries.put(entryName, content);
+			}
 		}
 
 		if (entries.isEmpty()) {
@@ -259,6 +275,39 @@ public class DownloadService {
 		headers.setContentLength(zipBytes.length);
 
 		return new ResponseEntity<>(zipBytes, headers, HttpStatus.OK);
+	}
+
+	private static String normalizeBundleFormat(String format) {
+		if (format == null || format.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Format is required");
+		}
+		String normalized = format.trim().toLowerCase(Locale.ROOT);
+		if (!WFS_BACKED_FORMATS.contains(normalized)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Format not supported");
+		}
+		return normalized;
+	}
+
+	private static boolean themeDeclares(DownloadThemeConfig theme, String format) {
+		return theme.formats() != null && theme.formats().stream().anyMatch(candidate -> isFormat(candidate, format));
+	}
+
+	/** CSV and GeoPackage are the formats an area-of-interest bundle can carry. */
+	private static List<String> bundleFormats(DownloadThemeConfig theme) {
+		if (theme.formats() == null) {
+			return List.of();
+		}
+		return theme.formats().stream()
+				.filter(format -> isFormat(format, "csv") || isGpkg(format))
+				.toList();
+	}
+
+	private static boolean isGpkg(String format) {
+		return isFormat(format, GPKG_FORMAT);
+	}
+
+	private static boolean isFormat(String format, String expected) {
+		return format != null && expected.equalsIgnoreCase(format.trim());
 	}
 
 	private static String blankToNull(String value) {

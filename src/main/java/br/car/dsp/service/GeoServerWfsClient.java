@@ -70,10 +70,18 @@ public class GeoServerWfsClient {
 	}
 
 	public byte[] downloadCsv(String wfsBaseUrl, String typeName, String cqlFilter) {
+		return download(wfsBaseUrl, typeName, cqlFilter, "csv");
+	}
+
+	public byte[] downloadGpkg(String wfsBaseUrl, String typeName, String cqlFilter) {
+		return download(wfsBaseUrl, typeName, cqlFilter, "gpkg");
+	}
+
+	private byte[] download(String wfsBaseUrl, String typeName, String cqlFilter, String outputFormat) {
 		String url = buildGetFeatureUrl(
 				wfsBaseUrl,
 				typeName,
-				"csv",
+				outputFormat,
 				cqlFilter,
 				false
 		);

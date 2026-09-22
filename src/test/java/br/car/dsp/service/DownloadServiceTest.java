@@ -12,6 +12,7 @@ import br.car.dsp.repository.AreaOfInterestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -20,6 +21,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -65,7 +68,7 @@ class DownloadServiceTest {
 				"area_of_interest",
 				"Area of interest",
 				"dsp:area-of-interest",
-				List.of("csv"),
+				List.of("csv", "gpkg"),
 				true,
 				new DownloadTerritoryFilterConfig("direct", "territory_level_3_id", null)
 		);
@@ -265,18 +268,36 @@ class DownloadServiceTest {
 	}
 
 	@Test
-	void downloadFile_ShouldReturnNotFoundForFormatsTheWfsCannotProduce() {
-		DownloadThemeConfig gpkgTheme = new DownloadThemeConfig(
-				"area_of_interest",
-				"Area of interest",
-				"dsp:area-of-interest",
-				List.of("csv", "gpkg"),
-				true,
-				new DownloadTerritoryFilterConfig("direct", "territory_level_3_id", null)
-		);
-		when(downloadConfigService.findEnabledTheme("area_of_interest")).thenReturn(java.util.Optional.of(gpkgTheme));
+	void downloadFile_ShouldFallBackToWfsGpkgWhenTheObjectIsMissing() {
+		when(downloadConfigService.findEnabledTheme("area_of_interest")).thenReturn(java.util.Optional.of(areaTheme));
 		when(preGeneratedGeoFileService.fetch("DF", null, "area_of_interest", "gpkg"))
 				.thenReturn(java.util.Optional.empty());
+		when(downloadConfigService.resolveWfsBaseUrl()).thenReturn("http://localhost:22669/geoserver/dsp/wfs");
+		when(territoryFilterBuilder.buildCqlFilter(areaTheme, "DF", null))
+				.thenReturn("territory_level_3_id IN ('5300108')");
+		when(geoServerWfsClient.countFeatures(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(1L);
+		when(geoServerWfsClient.downloadGpkg(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(new byte[] { 1, 2, 3 });
+		when(downloadFileNameBuilder.build("DF", null, "Area of interest", "gpkg"))
+				.thenReturn("area-of-interest_df.gpkg");
+
+		ResponseEntity<byte[]> response = downloadService.downloadFile("DF", null, "area_of_interest", "gpkg");
+
+		assertEquals(HttpStatus.OK, response.getStatusCode());
+		assertArrayEquals(new byte[] { 1, 2, 3 }, response.getBody());
+		assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("area-of-interest_df.gpkg"));
+		verify(geoServerWfsClient, never()).downloadCsv(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void downloadFile_ShouldReturnNotFoundForGpkgWhenTheCutHasNoFeatures() {
+		when(downloadConfigService.findEnabledTheme("area_of_interest")).thenReturn(java.util.Optional.of(areaTheme));
+		when(downloadConfigService.resolveWfsBaseUrl()).thenReturn("http://localhost:22669/geoserver/dsp/wfs");
+		when(territoryFilterBuilder.buildCqlFilter(areaTheme, "DF", null))
+				.thenReturn("territory_level_3_id IN ('')");
+		when(geoServerWfsClient.countFeatures(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(0L);
 
 		ResponseStatusException exception = assertThrows(
 				ResponseStatusException.class,
@@ -284,7 +305,46 @@ class DownloadServiceTest {
 		);
 
 		assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
-		verify(geoServerWfsClient, never()).countFeatures(anyString(), anyString(), anyString());
+		verify(geoServerWfsClient, never()).downloadGpkg(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void search_ShouldOmitGpkgUnlessTheObjectExists() {
+		DownloadSearchRequest request = new DownloadSearchRequest();
+		request.setLevel2("DF");
+		when(downloadConfigService.getEnabledThemes()).thenReturn(List.of(areaTheme));
+		when(downloadConfigService.resolveWfsBaseUrl()).thenReturn("http://localhost:22669/geoserver/dsp/wfs");
+		when(territoryFilterBuilder.buildCqlFilter(areaTheme, "DF", null))
+				.thenReturn("territory_level_3_id IN ('5300108')");
+		when(geoServerWfsClient.countFeatures(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(2L);
+		when(preGeneratedGeoFileService.exists("DF", null, "area_of_interest", "gpkg")).thenReturn(false);
+
+		List<DownloadItemResponse> items = downloadService.search(request);
+
+		assertTrue(items.getFirst().formats().stream().noneMatch(format -> "gpkg".equals(format.format())));
+		assertTrue(items.getFirst().formats().stream().anyMatch(format ->
+				"csv".equals(format.format()) && DownloadFormatStatus.AVAILABLE.equals(format.status())));
+	}
+
+	@Test
+	void search_ShouldListGpkgWhenTheObjectExistsEvenIfTheCutIsEmpty() {
+		DownloadSearchRequest request = new DownloadSearchRequest();
+		request.setLevel2("DF");
+		when(downloadConfigService.getEnabledThemes()).thenReturn(List.of(areaTheme));
+		when(downloadConfigService.resolveWfsBaseUrl()).thenReturn("http://localhost:22669/geoserver/dsp/wfs");
+		when(territoryFilterBuilder.buildCqlFilter(areaTheme, "DF", null))
+				.thenReturn("territory_level_3_id IN ('')");
+		when(geoServerWfsClient.countFeatures(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(0L);
+		when(preGeneratedGeoFileService.exists("DF", null, "area_of_interest", "gpkg")).thenReturn(true);
+
+		List<DownloadItemResponse> items = downloadService.search(request);
+
+		assertTrue(items.getFirst().formats().stream().anyMatch(format ->
+				"gpkg".equals(format.format()) && DownloadFormatStatus.AVAILABLE.equals(format.status())));
+		assertTrue(items.getFirst().formats().stream().anyMatch(format ->
+				"csv".equals(format.format()) && DownloadFormatStatus.UNAVAILABLE.equals(format.status())));
 	}
 
 	@Test
@@ -356,12 +416,60 @@ class DownloadServiceTest {
 		when(downloadFileNameBuilder.buildBundleArchiveName("DEMO-001")).thenReturn("demo-001_features.zip");
 		when(featuresBundleZipBuilder.build(anyMap())).thenReturn(new byte[] { 80, 75, 3, 4 });
 
-		ResponseEntity<byte[]> response = downloadService.downloadFeaturesBundle("DEMO-001");
+		ResponseEntity<byte[]> response = downloadService.downloadFeaturesBundle("DEMO-001", "csv");
 
 		assertEquals(HttpStatus.OK, response.getStatusCode());
 		assertEquals("application/zip", response.getHeaders().getContentType().toString());
 		assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("demo-001_features.zip"));
-		verify(featuresBundleZipBuilder).build(anyMap());
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, byte[]>> entries = ArgumentCaptor.forClass(Map.class);
+		verify(featuresBundleZipBuilder).build(entries.capture());
+		assertEquals(
+				Set.of(
+						"area-of-interest_demo-001.csv",
+						"generic-layer_demo-001.csv"
+				),
+				entries.getValue().keySet()
+		);
+		verify(geoServerWfsClient, never()).downloadGpkg(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void downloadFeaturesBundle_ShouldIncludeOnlyGpkgWhenThatFormatIsRequested() throws Exception {
+		when(areaOfInterestRepository.existsById("DEMO-001")).thenReturn(true);
+		when(downloadConfigService.getEnabledThemes()).thenReturn(List.of(areaTheme, linkedTheme));
+		when(downloadConfigService.resolveWfsBaseUrl()).thenReturn("http://localhost:22669/geoserver/dsp/wfs");
+		when(territoryFilterBuilder.buildAoiScopedCqlFilter(areaTheme, "DEMO-001"))
+				.thenReturn("id = 'DEMO-001'");
+		when(geoServerWfsClient.countFeatures(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(1L);
+		when(geoServerWfsClient.downloadGpkg(anyString(), eq("dsp:area-of-interest"), anyString()))
+				.thenReturn(new byte[] { 1, 2, 3 });
+		when(downloadFileNameBuilder.buildForAoi("DEMO-001", "Area of interest", "gpkg"))
+				.thenReturn("area-of-interest_demo-001.gpkg");
+		when(downloadFileNameBuilder.buildBundleArchiveName("DEMO-001")).thenReturn("demo-001_features.zip");
+		when(featuresBundleZipBuilder.build(anyMap())).thenReturn(new byte[] { 80, 75, 3, 4 });
+
+		ResponseEntity<byte[]> response = downloadService.downloadFeaturesBundle("DEMO-001", "gpkg");
+
+		assertEquals(HttpStatus.OK, response.getStatusCode());
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, byte[]>> entries = ArgumentCaptor.forClass(Map.class);
+		verify(featuresBundleZipBuilder).build(entries.capture());
+		assertEquals(Set.of("area-of-interest_demo-001.gpkg"), entries.getValue().keySet());
+		verify(geoServerWfsClient, never()).downloadCsv(anyString(), anyString(), anyString());
+		verify(territoryFilterBuilder, never()).buildAoiScopedCqlFilter(linkedTheme, "DEMO-001");
+	}
+
+	@Test
+	void downloadFeaturesBundle_ShouldRejectAnUnsupportedFormat() {
+		ResponseStatusException exception = assertThrows(
+				ResponseStatusException.class,
+				() -> downloadService.downloadFeaturesBundle("DEMO-001", "shp")
+		);
+
+		assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+		verify(areaOfInterestRepository, never()).existsById(anyString());
 	}
 
 	@Test
@@ -370,7 +478,7 @@ class DownloadServiceTest {
 
 		ResponseStatusException exception = assertThrows(
 				ResponseStatusException.class,
-				() -> downloadService.downloadFeaturesBundle("UNKNOWN")
+				() -> downloadService.downloadFeaturesBundle("UNKNOWN", "csv")
 		);
 
 		assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
@@ -388,7 +496,7 @@ class DownloadServiceTest {
 
 		ResponseStatusException exception = assertThrows(
 				ResponseStatusException.class,
-				() -> downloadService.downloadFeaturesBundle("DEMO-001")
+				() -> downloadService.downloadFeaturesBundle("DEMO-001", "csv")
 		);
 
 		assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());

@@ -38,5 +38,8 @@ public interface DownloadApi {
 	);
 
 	@GetMapping(value = "/features-bundle")
-	ResponseEntity<byte[]> downloadFeaturesBundle(@RequestParam String aoiId);
+	ResponseEntity<byte[]> downloadFeaturesBundle(
+			@RequestParam String aoiId,
+			@RequestParam String format
+	);
 }

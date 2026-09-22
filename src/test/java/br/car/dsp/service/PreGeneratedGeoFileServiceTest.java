@@ -152,6 +152,24 @@ class PreGeneratedGeoFileServiceTest {
 		assertTrue(service.findGeneratedAt("35", null, "area_of_interest", "csv").isEmpty());
 	}
 
+	@Test
+	void exists_IsTrueWhenTheObjectIsPresentEvenWithoutGeneratedAt() {
+		givenKey();
+		when(s3Client.headObject(any(HeadObjectRequest.class)))
+				.thenReturn(HeadObjectResponse.builder().metadata(Map.of()).build());
+
+		assertTrue(service.exists("35", null, "area_of_interest", "csv"));
+	}
+
+	@Test
+	void exists_IsFalseWhenTheObjectIsMissing() {
+		givenKey();
+		when(s3Client.headObject(any(HeadObjectRequest.class)))
+				.thenThrow(NoSuchKeyException.builder().build());
+
+		assertFalse(service.exists("35", null, "area_of_interest", "csv"));
+	}
+
 	private void givenKey() {
 		when(keyBuilder.build("35", null, "area_of_interest", "csv")).thenReturn(Optional.of(KEY));
 	}

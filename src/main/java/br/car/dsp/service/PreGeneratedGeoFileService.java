@@ -38,6 +38,29 @@ public class PreGeneratedGeoFileService {
 		return clientProvider.client().isPresent();
 	}
 
+	/**
+	 * True when the object is in the bucket. Unlike {@link #findGeneratedAt}, a missing
+	 * {@code generated-at} metadata still counts as present.
+	 */
+	public boolean exists(String level2Id, String level3Id, String themeCode, String format) {
+		return withKey(level2Id, level3Id, themeCode, format, (client, key) -> {
+			try {
+				client.headObject(HeadObjectRequest.builder()
+						.bucket(properties.getBucket())
+						.key(key)
+						.build());
+				return Optional.of(Boolean.TRUE);
+			} catch (NoSuchKeyException ex) {
+				return Optional.empty();
+			} catch (S3Exception ex) {
+				if (ex.statusCode() == 404) {
+					return Optional.empty();
+				}
+				throw ex;
+			}
+		}).orElse(false);
+	}
+
 	public Optional<byte[]> fetch(String level2Id, String level3Id, String themeCode, String format) {
 		return withKey(level2Id, level3Id, themeCode, format, (client, key) -> {
 			try {

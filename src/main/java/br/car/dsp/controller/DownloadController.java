@@ -41,8 +41,8 @@ public class DownloadController implements DownloadApi {
 	}
 
 	@Override
-	@Operation(summary = "Downloads a ZIP bundle with CSV files for all themes linked to an AOI")
-	public ResponseEntity<byte[]> downloadFeaturesBundle(String aoiId) {
-		return downloadService.downloadFeaturesBundle(aoiId);
+	@Operation(summary = "Downloads a ZIP of the chosen format for themes linked to an AOI")
+	public ResponseEntity<byte[]> downloadFeaturesBundle(String aoiId, String format) {
+		return downloadService.downloadFeaturesBundle(aoiId, format);
 	}
 }

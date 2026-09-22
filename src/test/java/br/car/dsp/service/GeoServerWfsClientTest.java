@@ -243,6 +243,21 @@ class GeoServerWfsClientTest {
 	}
 
 	@Test
+	void downloadGpkg_ShouldRequestGeoPackageOutput() {
+		byte[] gpkgBytes = new byte[] { 1, 2, 3 };
+
+		mockServer.expect(requestTo(containsString("outputFormat=gpkg")))
+				.andExpect(requestTo(containsString("srsName=EPSG:4326")))
+				.andExpect(requestTo(not(containsString("resultType=hits"))))
+				.andRespond(withSuccess(gpkgBytes, MediaType.APPLICATION_OCTET_STREAM));
+
+		byte[] result = client.downloadGpkg(WFS_BASE_URL, TYPE_NAME, CQL_FILTER);
+
+		assertArrayEquals(gpkgBytes, result);
+		mockServer.verify();
+	}
+
+	@Test
 	void downloadCsv_ShouldReturnCsvBytesWhenGeoServerRespondsWithContent() {
 		byte[] csvBytes = "id,name\n1,test\n".getBytes();
 
