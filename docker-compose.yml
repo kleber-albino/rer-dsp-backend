@@ -7,7 +7,7 @@ services:
       additional_contexts:
         dsp_config: ../rer-dsp-core/config
       args:
-        - DSP_BACKEND_PROJECT_NAME=dsp
+        - DSP_BACKEND_PROJECT_NAME=rer-dsp-backend
         - DSP_BACKEND_VERSION=0.0.1-SNAPSHOT
     container_name: dsp-backend
     restart: unless-stopped

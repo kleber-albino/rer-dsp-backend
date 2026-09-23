@@ -27,13 +27,13 @@ RUN --mount=type=cache,target=/root/.gradle/caches \
 # ============================
 # 3) Runtime Stage
 # ============================
-ARG DSP_BACKEND_PROJECT_NAME=dsp
+ARG DSP_BACKEND_PROJECT_NAME=rer-dsp-backend
 ARG DSP_BACKEND_VERSION=0.0.1-SNAPSHOT
 
 FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /app
 
-ARG DSP_BACKEND_PROJECT_NAME=dsp
+ARG DSP_BACKEND_PROJECT_NAME=rer-dsp-backend
 ARG DSP_BACKEND_VERSION=0.0.1-SNAPSHOT
 
 RUN apt-get update && apt-get upgrade -y \
