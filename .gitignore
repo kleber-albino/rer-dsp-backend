@@ -39,3 +39,6 @@ out/
 # Amostras locais em src/main/resources (não são config operacional do Docker)
 src/main/resources/installationConfig*.json
 src/main/resources/mapLayersConfig*.json
+
+# Compose Postgres local (legado; não faz parte do config operacional DSP)
+/docker/
