@@ -4,8 +4,6 @@ services:
     build:
       dockerfile: Dockerfile
       context: .
-      additional_contexts:
-        dsp_config: ../core/config
       args:
         - DSP_BACKEND_PROJECT_NAME=dsp-backend
         - DSP_BACKEND_VERSION=0.0.1-SNAPSHOT

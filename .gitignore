@@ -34,3 +34,8 @@ out/
 !gradlew
 !gradlew.bat
 !gradle/wrapper/gradle-wrapper.jar
+/testes/*
+
+# Amostras locais em src/main/resources (não são config operacional do Docker)
+src/main/resources/installationConfig*.json
+src/main/resources/mapLayersConfig*.json
